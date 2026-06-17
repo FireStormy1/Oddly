@@ -17,12 +17,12 @@ const io = new Server(server, {
 });
 
 // =========================
-// SIMPLE ROOM STORE
+// MEMORY STORE
 // =========================
 const rooms = {};
 
 // =========================
-// BETTER ROOM CODE GENERATOR (6 chars, readable)
+// ROOM CODE GENERATOR
 // =========================
 function generateRoomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -34,7 +34,7 @@ function generateRoomCode() {
 }
 
 // =========================
-// ROUTE
+// ROUTE CHECK
 // =========================
 app.get("/", (req, res) => {
   res.send("Oddly backend running");
@@ -90,8 +90,57 @@ io.on("connection", (socket) => {
         roomCode,
       });
     } catch (err) {
-      console.log("CREATE ROOM ERROR:", err);
-      callback?.({ success: false, error: "Room creation failed" });
+      console.log("CREATE ERROR:", err);
+      callback?.({ success: false });
+    }
+  });
+
+  // -------------------------
+  // JOIN ROOM (FIX FOR YOUR ISSUE)
+  // -------------------------
+  socket.on("room:join", (data, callback) => {
+    try {
+      const { roomCode, playerName } = data;
+
+      const room = rooms[roomCode];
+
+      if (!room) {
+        return callback?.({
+          success: false,
+          error: "Room not found",
+        });
+      }
+
+      socket.join(roomCode);
+
+      const newPlayer = {
+        id: socket.id,
+        name: playerName || "Player",
+        isHost: false,
+        isReady: false,
+        score: 0,
+        isConnected: true,
+      };
+
+      room.players.push(newPlayer);
+
+      const roomState = {
+        code: roomCode,
+        hostId: room.hostId,
+        players: room.players,
+        phase: "lobby",
+        settings: room.settings || {},
+      };
+
+      io.to(roomCode).emit("room:state", roomState);
+
+      callback?.({
+        success: true,
+        roomState,
+      });
+    } catch (err) {
+      console.log("JOIN ERROR:", err);
+      callback?.({ success: false, error: "Join failed" });
     }
   });
 
@@ -99,33 +148,41 @@ io.on("connection", (socket) => {
   // LEAVE ROOM
   // -------------------------
   socket.on("room:leave", (roomCode, callback) => {
-    console.log("leave room:", roomCode);
+    try {
+      socket.leave(roomCode);
 
-    socket.leave(roomCode);
+      if (rooms[roomCode]) {
+        rooms[roomCode].players = rooms[roomCode].players.filter(
+          (p) => p.id !== socket.id
+        );
 
-    if (rooms[roomCode]) {
-      rooms[roomCode].players = rooms[roomCode].players.filter(
-        (p) => p.id !== socket.id
-      );
-
-      // delete room if empty
-      if (rooms[roomCode].players.length === 0) {
-        delete rooms[roomCode];
+        if (rooms[roomCode].players.length === 0) {
+          delete rooms[roomCode];
+        } else {
+          io.to(roomCode).emit("room:state", {
+            code: roomCode,
+            hostId: rooms[roomCode].hostId,
+            players: rooms[roomCode].players,
+            phase: "lobby",
+          });
+        }
       }
+
+      socket.emit("room:left");
+
+      callback?.({ success: true });
+    } catch (err) {
+      console.log("LEAVE ERROR:", err);
+      callback?.({ success: false });
     }
-
-    socket.emit("room:left");
-
-    callback?.({ success: true });
   });
 
   // -------------------------
-  // DISCONNECT HANDLING
+  // DISCONNECT
   // -------------------------
   socket.on("disconnect", (reason) => {
     console.log("disconnected:", socket.id, reason);
 
-    // remove player from all rooms
     for (const code in rooms) {
       rooms[code].players = rooms[code].players.filter(
         (p) => p.id !== socket.id
