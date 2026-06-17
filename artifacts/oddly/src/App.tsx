@@ -79,7 +79,7 @@ function App() {
   const [countdown, setCountdown] = useState<number | null>(null);
 
   useEffect(() => {
-    document.documentElement.classList.add("dark");
+  
     
     const newSocket = io({ path: "/socket.io" });
     setSocket(newSocket);
