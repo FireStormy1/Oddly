@@ -5,6 +5,9 @@ import { Server } from "socket.io";
 const app = express();
 const server = http.createServer(app);
 
+// =========================
+// SOCKET SETUP
+// =========================
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -13,25 +16,42 @@ const io = new Server(server, {
   path: "/socket.io",
 });
 
+// =========================
+// SIMPLE ROOM STORE
+// =========================
+const rooms = {};
+
+// =========================
+// BETTER ROOM CODE GENERATOR (6 chars, readable)
+// =========================
+function generateRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+// =========================
+// ROUTE
+// =========================
 app.get("/", (req, res) => {
   res.send("Oddly backend running");
 });
 
-// simple in-memory room store (IMPORTANT)
-const rooms = {};
-
+// =========================
+// SOCKET LOGIC
+// =========================
 io.on("connection", (socket) => {
   console.log("connected:", socket.id);
 
-  // =========================
+  // -------------------------
   // CREATE ROOM
-  // =========================
+  // -------------------------
   socket.on("room:create", (data, callback) => {
     try {
-      const roomCode = Math.random()
-        .toString(36)
-        .substring(2, 6)
-        .toUpperCase();
+      const roomCode = generateRoomCode();
 
       socket.join(roomCode);
 
@@ -70,14 +90,14 @@ io.on("connection", (socket) => {
         roomCode,
       });
     } catch (err) {
-      console.log(err);
-      callback?.({ success: false, error: "Create room failed" });
+      console.log("CREATE ROOM ERROR:", err);
+      callback?.({ success: false, error: "Room creation failed" });
     }
   });
 
-  // =========================
-  // LEAVE ROOM (FIXED)
-  // =========================
+  // -------------------------
+  // LEAVE ROOM
+  // -------------------------
   socket.on("room:leave", (roomCode, callback) => {
     console.log("leave room:", roomCode);
 
@@ -87,6 +107,11 @@ io.on("connection", (socket) => {
       rooms[roomCode].players = rooms[roomCode].players.filter(
         (p) => p.id !== socket.id
       );
+
+      // delete room if empty
+      if (rooms[roomCode].players.length === 0) {
+        delete rooms[roomCode];
+      }
     }
 
     socket.emit("room:left");
@@ -94,14 +119,28 @@ io.on("connection", (socket) => {
     callback?.({ success: true });
   });
 
-  // =========================
-  // DISCONNECT
-  // =========================
+  // -------------------------
+  // DISCONNECT HANDLING
+  // -------------------------
   socket.on("disconnect", (reason) => {
     console.log("disconnected:", socket.id, reason);
+
+    // remove player from all rooms
+    for (const code in rooms) {
+      rooms[code].players = rooms[code].players.filter(
+        (p) => p.id !== socket.id
+      );
+
+      if (rooms[code].players.length === 0) {
+        delete rooms[code];
+      }
+    }
   });
 });
 
+// =========================
+// START SERVER
+// =========================
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, "0.0.0.0", () => {
