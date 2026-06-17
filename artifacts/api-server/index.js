@@ -11,7 +11,7 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   },
   path: "/socket.io",
-  transports: ["websocket", "polling"]
+  transports: ["polling","websocket"]
 });
 
 io.on("connection", (socket) => {
