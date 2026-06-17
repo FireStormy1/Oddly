@@ -9,6 +9,10 @@ import GameApp from "@/components/GameApp";
 
 const queryClient = new QueryClient();
 
+/* =========================
+   TYPES
+========================= */
+
 export type RoomPhase =
   | "lobby"
   | "word-reveal"
@@ -53,35 +57,48 @@ export interface RoomState {
   voteCounts?: Record<string, number>;
 }
 
+type TabType = "home" | "about" | "rules" | "developer";
+type ModalType = "none" | "create" | "join";
+
+/* =========================
+   CONTEXT
+========================= */
+
 interface GameContextType {
   socket: Socket | null;
   mySocketId: string;
   myWord: string | null;
   roomState: RoomState | null;
-  navTab: "home" | "about" | "rules" | "developer";
-  setNavTab: (tab: any) => void;
-  modal: "none" | "create" | "join";
-  setModal: (modal: any) => void;
+  navTab: TabType;
+  setNavTab: (tab: TabType) => void;
+  modal: ModalType;
+  setModal: (modal: ModalType) => void;
   wordRevealed: boolean;
-  setWordRevealed: (revealed: boolean) => void;
+  setWordRevealed: (v: boolean) => void;
   countdown: number | null;
 }
 
 export const GameContext = createContext<GameContextType | null>(null);
 
 export function useGame() {
-  const context = useContext(GameContext);
-  if (!context) throw new Error("useGame must be used within provider");
-  return context;
+  const ctx = useContext(GameContext);
+  if (!ctx) throw new Error("useGame must be used within GameProvider");
+  return ctx;
 }
+
+/* =========================
+   APP
+========================= */
 
 function App() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [mySocketId, setMySocketId] = useState("");
   const [myWord, setMyWord] = useState<string | null>(null);
   const [roomState, setRoomState] = useState<RoomState | null>(null);
-  const [navTab, setNavTab] = useState<any>("home");
-  const [modal, setModal] = useState<any>("none");
+
+  const [navTab, setNavTab] = useState<TabType>("home");
+  const [modal, setModal] = useState<ModalType>("none");
+
   const [wordRevealed, setWordRevealed] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
 
@@ -89,6 +106,12 @@ function App() {
     document.documentElement.classList.add("dark");
 
     console.log("SOCKET INIT START");
+
+    // ❗ IMPORTANT: prevent duplicate sockets (fixes blank UI bugs)
+    if (socket) {
+      socket.disconnect();
+      setSocket(null);
+    }
 
     const newSocket = io("https://oddly-production.up.railway.app", {
       path: "/socket.io",
@@ -98,7 +121,10 @@ function App() {
 
     setSocket(newSocket);
 
-    // ✅ CONNECTION LOGS (VERY IMPORTANT)
+    /* =========================
+       CONNECTION LOGS
+    ========================= */
+
     newSocket.on("connect", () => {
       console.log("✅ CONNECTED:", newSocket.id);
       setMySocketId(newSocket.id || "");
@@ -112,9 +138,9 @@ function App() {
       console.log("❌ DISCONNECTED:", reason);
     });
 
-    // =========================
-    // GAME EVENTS
-    // =========================
+    /* =========================
+       GAME EVENTS
+    ========================= */
 
     newSocket.on("room:state", (state: RoomState) => {
       console.log("ROOM STATE:", state);
@@ -138,16 +164,22 @@ function App() {
     });
 
     newSocket.on("room:left", () => {
+      console.log("LEFT ROOM");
       setRoomState(null);
       setMyWord(null);
       setWordRevealed(false);
       setCountdown(null);
+      setModal("none");
     });
 
     return () => {
       newSocket.disconnect();
     };
   }, []);
+
+  /* =========================
+     UI
+  ========================= */
 
   return (
     <QueryClientProvider client={queryClient}>
