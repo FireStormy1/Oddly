@@ -1,4 +1,5 @@
 console.log("APP LOADED");
+
 import { useState, useEffect, createContext, useContext } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -58,9 +59,9 @@ interface GameContextType {
   myWord: string | null;
   roomState: RoomState | null;
   navTab: "home" | "about" | "rules" | "developer";
-  setNavTab: (tab: "home" | "about" | "rules" | "developer") => void;
+  setNavTab: (tab: any) => void;
   modal: "none" | "create" | "join";
-  setModal: (modal: "none" | "create" | "join") => void;
+  setModal: (modal: any) => void;
   wordRevealed: boolean;
   setWordRevealed: (revealed: boolean) => void;
   countdown: number | null;
@@ -70,41 +71,55 @@ export const GameContext = createContext<GameContextType | null>(null);
 
 export function useGame() {
   const context = useContext(GameContext);
-  if (!context) throw new Error("useGame must be used within a GameProvider");
+  if (!context) throw new Error("useGame must be used within provider");
   return context;
 }
 
 function App() {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [mySocketId, setMySocketId] = useState<string>("");
+  const [mySocketId, setMySocketId] = useState("");
   const [myWord, setMyWord] = useState<string | null>(null);
   const [roomState, setRoomState] = useState<RoomState | null>(null);
-  const [navTab, setNavTab] =
-    useState<"home" | "about" | "rules" | "developer">("home");
-  const [modal, setModal] = useState<"none" | "create" | "join">("none");
-  const [wordRevealed, setWordRevealed] = useState<boolean>(false);
+  const [navTab, setNavTab] = useState<any>("home");
+  const [modal, setModal] = useState<any>("none");
+  const [wordRevealed, setWordRevealed] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
 
-    // ✅ FIXED SOCKET CONNECTION (Railway backend)
-    const newSocket = io(
-      "https://oddly-production.up.railway.app",
-      {
-        path: "/socket.io",
-        transports: ["polling","websocket"],
-      }
-    );
+    console.log("SOCKET INIT START");
+
+    const newSocket = io("https://oddly-production.up.railway.app", {
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+      withCredentials: true,
+    });
 
     setSocket(newSocket);
 
+    // ✅ CONNECTION LOGS (VERY IMPORTANT)
     newSocket.on("connect", () => {
+      console.log("✅ CONNECTED:", newSocket.id);
       setMySocketId(newSocket.id || "");
     });
 
+    newSocket.on("connect_error", (err) => {
+      console.log("🔥 CONNECT ERROR:", err.message);
+    });
+
+    newSocket.on("disconnect", (reason) => {
+      console.log("❌ DISCONNECTED:", reason);
+    });
+
+    // =========================
+    // GAME EVENTS
+    // =========================
+
     newSocket.on("room:state", (state: RoomState) => {
+      console.log("ROOM STATE:", state);
       setRoomState(state);
+
       if (state.phase === "lobby") {
         setMyWord(null);
         setWordRevealed(false);
@@ -112,6 +127,7 @@ function App() {
     });
 
     newSocket.on("round:wordAssigned", (data: { word: string }) => {
+      console.log("WORD:", data);
       setMyWord(data.word);
       setWordRevealed(false);
     });
@@ -126,10 +142,6 @@ function App() {
       setMyWord(null);
       setWordRevealed(false);
       setCountdown(null);
-    });
-
-    newSocket.on("disconnect", () => {
-      console.log("Socket disconnected");
     });
 
     return () => {
@@ -155,7 +167,7 @@ function App() {
             countdown,
           }}
         >
-          <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden selection:bg-primary/30">
+          <div className="min-h-screen bg-background text-foreground font-sans">
             <GameApp />
           </div>
         </GameContext.Provider>
