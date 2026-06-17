@@ -1,38 +1,29 @@
 import http from "http";
-import { Server as SocketIOServer } from "socket.io";
-import app from "./app.js";
-import { logger } from "./lib/logger.js";
-import { registerGameHandlers } from "./game/gameLogic.js";
+import express from "express";
+import { Server } from "socket.io";
 
-const rawPort = process.env["PORT"];
+const app = express();
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+app.get("/", (req, res) => {
+  res.send("Server alive 🚀");
+});
 
-const port = Number(rawPort);
+const server = http.createServer(app);
 
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-const httpServer = http.createServer(app);
-
-const io = new SocketIOServer(httpServer, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
-  path: "/socket.io",
+const io = new Server(server, {
+  cors: { origin: "*" }
 });
 
 io.on("connection", (socket) => {
-  logger.info({ socketId: socket.id }, "Client connected");
-  registerGameHandlers(io, socket);
+  console.log("connected:", socket.id);
+
+  socket.on("room:create", () => {
+    socket.emit("room:created", { code: "TEST123" });
+  });
 });
 
-httpServer.listen(port, () => {
-  logger.info({ port }, "Server listening");
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("running on", PORT);
 });
