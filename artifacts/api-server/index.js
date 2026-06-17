@@ -1,204 +1,148 @@
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
+import cors from "cors";
 
 const app = express();
+app.use(cors());
+
 const server = http.createServer(app);
 
-// =========================
-// SOCKET SETUP
-// =========================
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
-  },
+  cors: { origin: "*" },
   path: "/socket.io",
 });
 
-// =========================
-// MEMORY STORE
-// =========================
 const rooms = {};
 
-// =========================
-// ROOM CODE GENERATOR
-// =========================
-function generateRoomCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
+/* ---------------- HELPERS ---------------- */
+
+function generateCode() {
+  return Math.random().toString(36).substring(2, 6).toUpperCase();
 }
 
-// =========================
-// ROUTE CHECK
-// =========================
+/* ---------------- SOCKET LOGIC ---------------- */
+
+io.on("connection", (socket) => {
+  console.log("✅ connected:", socket.id);
+
+  // CREATE ROOM
+  socket.on("room:create", (data, cb) => {
+    const code = generateCode();
+
+    rooms[code] = {
+      code,
+      hostId: socket.id,
+      players: [
+        {
+          id: socket.id,
+          name: data.playerName,
+          isHost: true,
+          isReady: false,
+          score: 0,
+          isConnected: true,
+        },
+      ],
+      settings: data.settings,
+      phase: "lobby",
+    };
+
+    socket.join(code);
+
+    cb?.({ success: true, roomCode: code });
+
+    io.to(code).emit("room:state", rooms[code]);
+  });
+
+  // JOIN ROOM
+  socket.on("room:join", ({ roomCode, playerName }, cb) => {
+    const room = rooms[roomCode];
+
+    if (!room) {
+      cb?.({ success: false, error: "Room not found" });
+      return;
+    }
+
+    const player = {
+      id: socket.id,
+      name: playerName,
+      isHost: false,
+      isReady: false,
+      score: 0,
+      isConnected: true,
+    };
+
+    room.players.push(player);
+
+    socket.join(roomCode);
+
+    cb?.({ success: true });
+
+    io.to(roomCode).emit("room:state", room);
+  });
+
+  // READY
+  socket.on("player:ready", () => {
+    for (const code in rooms) {
+      const room = rooms[code];
+      const p = room.players.find((x) => x.id === socket.id);
+      if (p) {
+        p.isReady = !p.isReady;
+        io.to(code).emit("room:state", room);
+      }
+    }
+  });
+
+  // LEAVE ROOM
+  socket.on("room:leave", () => {
+    for (const code in rooms) {
+      const room = rooms[code];
+
+      room.players = room.players.filter((p) => p.id !== socket.id);
+
+      io.to(code).emit("room:state", room);
+    }
+  });
+
+  // START GAME
+  socket.on("game:start", (cb) => {
+    for (const code in rooms) {
+      const room = rooms[code];
+
+      if (room.hostId !== socket.id) continue;
+
+      if (room.players.length < 2) {
+        cb?.({ success: false, error: "Need at least 2 players" });
+        return;
+      }
+
+      room.phase = "word-reveal";
+
+      io.to(code).emit("room:state", room);
+
+      cb?.({ success: true });
+    }
+  });
+
+  // DISCONNECT
+  socket.on("disconnect", () => {
+    console.log("❌ disconnected:", socket.id);
+
+    for (const code in rooms) {
+      const room = rooms[code];
+
+      room.players = room.players.filter((p) => p.id !== socket.id);
+
+      io.to(code).emit("room:state", room);
+    }
+  });
+});
+
 app.get("/", (req, res) => {
   res.send("Oddly backend running");
 });
 
-// =========================
-// SOCKET LOGIC
-// =========================
-io.on("connection", (socket) => {
-  console.log("connected:", socket.id);
-
-  // -------------------------
-  // CREATE ROOM
-  // -------------------------
-  socket.on("room:create", (data, callback) => {
-    try {
-      const roomCode = generateRoomCode();
-
-      socket.join(roomCode);
-
-      rooms[roomCode] = {
-        hostId: socket.id,
-        players: [
-          {
-            id: socket.id,
-            name: data?.playerName || "Player",
-            isHost: true,
-            isReady: true,
-            score: 0,
-            isConnected: true,
-          },
-        ],
-      };
-
-      const roomState = {
-        code: roomCode,
-        hostId: socket.id,
-        players: rooms[roomCode].players,
-        phase: "lobby",
-        settings: data?.settings || {
-          maxPlayers: 8,
-          difficulty: "medium",
-          totalRounds: 3,
-          hintTimer: 20,
-          votingTimer: 90,
-        },
-      };
-
-      socket.emit("room:state", roomState);
-
-      callback?.({
-        success: true,
-        roomCode,
-      });
-    } catch (err) {
-      console.log("CREATE ERROR:", err);
-      callback?.({ success: false });
-    }
-  });
-
-  // -------------------------
-  // JOIN ROOM (FIX FOR YOUR ISSUE)
-  // -------------------------
-  socket.on("room:join", (data, callback) => {
-    try {
-      const { roomCode, playerName } = data;
-
-      const room = rooms[roomCode];
-
-      if (!room) {
-        return callback?.({
-          success: false,
-          error: "Room not found",
-        });
-      }
-
-      socket.join(roomCode);
-
-      const newPlayer = {
-        id: socket.id,
-        name: playerName || "Player",
-        isHost: false,
-        isReady: false,
-        score: 0,
-        isConnected: true,
-      };
-
-      room.players.push(newPlayer);
-
-      const roomState = {
-        code: roomCode,
-        hostId: room.hostId,
-        players: room.players,
-        phase: "lobby",
-        settings: room.settings || {},
-      };
-
-      io.to(roomCode).emit("room:state", roomState);
-
-      callback?.({
-        success: true,
-        roomState,
-      });
-    } catch (err) {
-      console.log("JOIN ERROR:", err);
-      callback?.({ success: false, error: "Join failed" });
-    }
-  });
-
-  // -------------------------
-  // LEAVE ROOM
-  // -------------------------
-  socket.on("room:leave", (roomCode, callback) => {
-    try {
-      socket.leave(roomCode);
-
-      if (rooms[roomCode]) {
-        rooms[roomCode].players = rooms[roomCode].players.filter(
-          (p) => p.id !== socket.id
-        );
-
-        if (rooms[roomCode].players.length === 0) {
-          delete rooms[roomCode];
-        } else {
-          io.to(roomCode).emit("room:state", {
-            code: roomCode,
-            hostId: rooms[roomCode].hostId,
-            players: rooms[roomCode].players,
-            phase: "lobby",
-          });
-        }
-      }
-
-      socket.emit("room:left");
-
-      callback?.({ success: true });
-    } catch (err) {
-      console.log("LEAVE ERROR:", err);
-      callback?.({ success: false });
-    }
-  });
-
-  // -------------------------
-  // DISCONNECT
-  // -------------------------
-  socket.on("disconnect", (reason) => {
-    console.log("disconnected:", socket.id, reason);
-
-    for (const code in rooms) {
-      rooms[code].players = rooms[code].players.filter(
-        (p) => p.id !== socket.id
-      );
-
-      if (rooms[code].players.length === 0) {
-        delete rooms[code];
-      }
-    }
-  });
-});
-
-// =========================
-// START SERVER
-// =========================
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on", PORT);
