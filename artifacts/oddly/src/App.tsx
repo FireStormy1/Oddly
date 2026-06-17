@@ -89,7 +89,7 @@ function App() {
 
     // ✅ FIXED SOCKET CONNECTION (Railway backend)
     const newSocket = io(
-      "https://energetic-wisdom-production-ccf3.up.railway.app",
+      "https://https://oddly-production.up.railway.app",
       {
         path: "/socket.io",
         transports: ["websocket", "polling"],
