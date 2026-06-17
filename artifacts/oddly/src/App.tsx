@@ -7,7 +7,14 @@ import GameApp from "@/components/GameApp";
 
 const queryClient = new QueryClient();
 
-export type RoomPhase = "lobby" | "word-reveal" | "hint" | "hint-reveal" | "voting" | "result" | "game-over";
+export type RoomPhase =
+  | "lobby"
+  | "word-reveal"
+  | "hint"
+  | "hint-reveal"
+  | "voting"
+  | "result"
+  | "game-over";
 
 export interface Player {
   id: string;
@@ -62,9 +69,7 @@ export const GameContext = createContext<GameContextType | null>(null);
 
 export function useGame() {
   const context = useContext(GameContext);
-  if (!context) {
-    throw new Error("useGame must be used within a GameProvider");
-  }
+  if (!context) throw new Error("useGame must be used within a GameProvider");
   return context;
 }
 
@@ -73,15 +78,24 @@ function App() {
   const [mySocketId, setMySocketId] = useState<string>("");
   const [myWord, setMyWord] = useState<string | null>(null);
   const [roomState, setRoomState] = useState<RoomState | null>(null);
-  const [navTab, setNavTab] = useState<"home" | "about" | "rules" | "developer">("home");
+  const [navTab, setNavTab] =
+    useState<"home" | "about" | "rules" | "developer">("home");
   const [modal, setModal] = useState<"none" | "create" | "join">("none");
   const [wordRevealed, setWordRevealed] = useState<boolean>(false);
   const [countdown, setCountdown] = useState<number | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
-    
-    const newSocket = io({ path: "/socket.io" });
+
+    // ✅ FIXED SOCKET CONNECTION (Railway backend)
+    const newSocket = io(
+      "https://energetic-wisdom-production-ccf3.up.railway.app",
+      {
+        path: "/socket.io",
+        transports: ["websocket", "polling"],
+      }
+    );
+
     setSocket(newSocket);
 
     newSocket.on("connect", () => {
@@ -103,9 +117,7 @@ function App() {
 
     newSocket.on("round:countdown", (data: { seconds: number }) => {
       setCountdown(data.seconds);
-      if (data.seconds === 0) {
-        setCountdown(null);
-      }
+      if (data.seconds === 0) setCountdown(null);
     });
 
     newSocket.on("room:left", () => {
@@ -113,6 +125,10 @@ function App() {
       setMyWord(null);
       setWordRevealed(false);
       setCountdown(null);
+    });
+
+    newSocket.on("disconnect", () => {
+      console.log("Socket disconnected");
     });
 
     return () => {
