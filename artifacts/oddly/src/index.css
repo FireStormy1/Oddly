@@ -4,21 +4,20 @@
 @tailwind components;
 @tailwind utilities;
 
-/* fonts */
-:root {
-  --app-font-sans: 'Poppins', sans-serif;
-}
-
-body {
-  font-family: var(--app-font-sans);
-}
-
 :root {
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
+  --primary: 262 83% 58%;
 }
 
 .dark {
   --background: 222.2 84% 4.9%;
   --foreground: 210 40% 98%;
+  --primary: 262 83% 58%;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
