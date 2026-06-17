@@ -92,7 +92,7 @@ function App() {
       "https://oddly-production.up.railway.app",
       {
         path: "/socket.io",
-        transports: ["websocket", "polling"],
+        transports: ["polling","websocket"],
       }
     );
 
